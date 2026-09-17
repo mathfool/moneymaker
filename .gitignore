@@ -1,0 +1,15 @@
+# Python
+backend/.venv/
+**/__pycache__/
+*.pyc
+
+# 本地数据（行情缓存、基本面缓存、自选列表），不入库
+backend/data/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# 系统 / 编辑器
+.DS_Store
+.claude/
