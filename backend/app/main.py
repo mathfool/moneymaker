@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -8,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from . import db, data, universe, watchlist, scanner, backtest, market, fundamentals
+from . import db, data, universe, watchlist, scanner, backtest, market, fundamentals, news
 from .strategies import STRATEGIES, get_strategy
 
 app = FastAPI(title="moneymaker", version="0.1")
@@ -133,6 +134,17 @@ def stock(symbol: str, strategy: str = Query("minervini"), days: int = Query(400
         "market": {"stage": base_ctx.get("benchmark_stage")},
         "fundamentals": ctx.get("fund"),
     })
+
+
+@app.get("/api/news/{symbol}")
+def get_news(symbol: str, limit: int = Query(40)):
+    symbol = symbol.upper()
+    f = fundamentals.get(symbol, refresh=False) or {}
+    name = f.get("name")
+    if name:
+        name = re.sub(r",?\s*(inc\.?|corp(oration)?\.?|co\.?|ltd\.?|plc|holdings?|company|\(the\))\s*$", "", name, flags=re.I).strip()
+    items = news.get(symbol, name)
+    return _clean({"symbol": symbol, "items": items[:limit], "total": len(items)})
 
 
 @app.get("/api/backtest/{symbol}")

@@ -28,6 +28,7 @@ export interface Row {
   eps_yoy?: number | null; rev_yoy?: number | null; market_cap?: number | null; days_to_earnings?: number | null
   industry?: string | null
 }
+export interface NewsItem { title: string; url: string | null; source: string; time: string | null; kind: 'news' | 'filing'; via: string; tags: string[]; items?: string[] }
 export interface SectorInfo { sector: string; rank: number | null; rs_score: number | null; count: number }
 export interface ConsensusRow {
   symbol: string; close: number; chg1d: number; rs: number | null; sector: string | null; industry?: string | null; eps_yoy?: number | null; rev_yoy?: number | null
@@ -65,6 +66,7 @@ export const api = {
   stock: (s: string, strategy: string, days = 400) => j<StockResponse>(`/api/stock/${encodeURIComponent(s)}?strategy=${strategy}&days=${days}`),
   backtest: (s: string, strategy: string, days = 750) => j<Backtest>(`/api/backtest/${encodeURIComponent(s)}?strategy=${strategy}&days=${days}`),
   scan: (strategy: string, minScore = 0) => j<{ rows: Row[]; total: number; status: ScanStatus }>(`/api/scan?strategy=${strategy}&min_score=${minScore}&limit=1000`),
+  news: (s: string) => j<{ symbol: string; items: NewsItem[]; total: number }>(`/api/news/${encodeURIComponent(s)}`),
   sectors: () => j<SectorInfo[]>('/api/sectors'),
   consensus: (min: number, mode: 'buyhold' | 'score') => j<{ rows: ConsensusRow[]; total: number; status: ScanStatus }>(`/api/consensus?min_support=${min}&mode=${mode}`),
   scanRun: () => j<{ started: boolean; status: ScanStatus }>('/api/scan/run', { method: 'POST' }),
@@ -74,4 +76,14 @@ export const api = {
 
 export const pct = (v: number | null | undefined, nd = 1) => (v == null ? '–' : `${(v * 100).toFixed(nd)}%`)
 export const cap = (v: number | null | undefined) => (v == null ? '–' : v >= 1e12 ? `${(v / 1e12).toFixed(2)}T` : v >= 1e9 ? `${(v / 1e9).toFixed(1)}B` : `${(v / 1e6).toFixed(0)}M`)
+export const ago = (iso: string | null | undefined) => {
+  if (!iso) return '–'
+  const ms = Date.now() - new Date(iso).getTime()
+  const h = ms / 3.6e6
+  if (h < 1) return `${Math.max(1, Math.round(ms / 6e4))} 分钟前`
+  if (h < 24) return `${Math.round(h)} 小时前`
+  const d = h / 24
+  if (d < 7) return `${Math.round(d)} 天前`
+  return iso.slice(5, 10).replace('-', '/')
+}
 export const num = (v: number | null | undefined, nd = 2) => (v == null ? '–' : v.toFixed(nd))

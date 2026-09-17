@@ -64,6 +64,11 @@ def init_db() -> None:
                 payload TEXT NOT NULL,
                 updated TEXT
             );
+            CREATE TABLE IF NOT EXISTS news (
+                symbol TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                updated TEXT
+            );
             CREATE TABLE IF NOT EXISTS scan_results (
                 symbol TEXT NOT NULL,
                 strategy TEXT NOT NULL,
@@ -186,6 +191,18 @@ def get_fundamentals(symbol: str) -> dict | None:
     with cursor() as cur:
         row = cur.execute("SELECT payload, updated FROM fundamentals WHERE symbol=?", (symbol,)).fetchone()
     return {"data": json.loads(row[0]), "updated": row[1]} if row else None
+
+
+def save_news(symbol: str, items: list[dict]) -> None:
+    with cursor() as cur:
+        cur.execute("INSERT OR REPLACE INTO news(symbol,payload,updated) VALUES (?,?,?)",
+                    (symbol, json.dumps(items), pd.Timestamp.utcnow().isoformat()))
+
+
+def get_news(symbol: str) -> dict | None:
+    with cursor() as cur:
+        row = cur.execute("SELECT payload, updated FROM news WHERE symbol=?", (symbol,)).fetchone()
+    return {"items": json.loads(row[0]), "updated": row[1]} if row else None
 
 
 def save_scan(strategy: str, results: dict[str, dict]) -> None:

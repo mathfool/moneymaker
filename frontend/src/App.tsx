@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, pct, type Market, type StockResponse, type StrategyMeta } from './api'
+import { api, pct, type Market, type NewsItem, type StockResponse, type StrategyMeta } from './api'
 import Chart from './components/Chart'
 import StockList from './components/StockList'
 import SignalPanel from './components/SignalPanel'
@@ -37,6 +37,14 @@ export default function App() {
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [news, setNews] = useState<NewsItem[]>([])
+  useEffect(() => {
+    if (!symbol) return
+    let cancelled = false
+    setNews([])
+    api.news(symbol).then(r => { if (!cancelled) setNews(r.items) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [symbol, refreshKey])
 
   useEffect(() => { api.strategies().then(setStrategies); api.market().then(setMarket).catch(() => {}) }, [])
   useEffect(() => { localStorage.setItem('mm_strategy', strategy) }, [strategy])
@@ -86,12 +94,12 @@ export default function App() {
           {data && <span className="muted" style={{ marginLeft: 'auto' }}>{meta?.name}：{data.result.state}</span>}
         </div>
         {data ? (
-          <Chart candles={data.candles} overlays={data.result.overlays} colors={meta?.colors ?? {}} signals={data.result.signals} levels={data.result.levels} />
+          <Chart candles={data.candles} overlays={data.result.overlays} colors={meta?.colors ?? {}} signals={data.result.signals} levels={data.result.levels} news={news} />
         ) : (
           <div className="empty" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{err ?? '在左侧选择一只股票'}</div>
         )}
       </main>
-      <SignalPanel data={data} strategy={meta} onPickStrategy={setStrategy} />
+      <SignalPanel data={data} strategy={meta} onPickStrategy={setStrategy} news={news} />
     </div>
   )
 }

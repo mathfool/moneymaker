@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import {
   createChart, ColorType, CrosshairMode, LineStyle, type IChartApi, type ISeriesApi, type SeriesMarker, type Time,
 } from 'lightweight-charts'
-import type { Candle, Signal } from '../api'
+import type { Candle, NewsItem, Signal } from '../api'
 
 interface Props {
   candles: Candle[]
@@ -11,6 +11,7 @@ interface Props {
   signals: Signal[]
   levels: Record<string, number | null>
   equity?: { time: string; value: number }[]
+  news?: NewsItem[]
 }
 
 const LEVEL_STYLE: Record<string, { color: string; title: string }> = {
@@ -21,7 +22,7 @@ const LEVEL_STYLE: Record<string, { color: string; title: string }> = {
   resistance: { color: '#f5a623', title: '阻力' },
 }
 
-export default function Chart({ candles, overlays, colors, signals, levels }: Props) {
+export default function Chart({ candles, overlays, colors, signals, levels, news = [] }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -72,6 +73,18 @@ export default function Chart({ candles, overlays, colors, signals, levels }: Pr
         shape: s.type === 'buy' ? 'arrowUp' : 'arrowDown',
         text: s.label,
       }))
+    // News markers: one per day, only filings and earnings-tagged stories, snapped to the nearest trading day.
+    const days = new Set(candles.map(c => c.time))
+    const seen = new Set<string>()
+    for (const n of news) {
+      if (!n.time || !(n.kind === 'filing' || n.tags.includes('财报'))) continue
+      let day = n.time.slice(0, 10)
+      if (!days.has(day)) { const next = candles.find(c => c.time >= day); if (!next) continue; day = next.time }
+      if (!first || day < first || seen.has(day)) continue
+      seen.add(day)
+      markers.push({ time: day as Time, position: 'aboveBar', color: n.kind === 'filing' ? '#a78bfa' : '#8b93a7', shape: 'circle', size: 0.6, text: n.kind === 'filing' ? '公告' : '财报' })
+    }
+    markers.sort((a, b) => (a.time as string) < (b.time as string) ? -1 : (a.time as string) > (b.time as string) ? 1 : 0)
     cs.setMarkers(markers)
     priceLinesRef.current.forEach(p => cs.removePriceLine(p))
     priceLinesRef.current = []
@@ -81,13 +94,14 @@ export default function Chart({ candles, overlays, colors, signals, levels }: Pr
       priceLinesRef.current.push(cs.createPriceLine({ price: v, color: st.color, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: st.title }))
     }
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - 180), to: candles.length + 5 })
-  }, [candles, overlays, colors, signals, levels])
+  }, [candles, overlays, colors, signals, levels, news])
 
   return (
     <div className="chart-wrap">
       <div className="legend">
         {Object.keys(overlays).map(n => <span key={n}><i style={{ background: colors[n] ?? '#888' }} />{n}</span>)}
         <span><i style={{ background: '#ef5350' }} />虚线 = 止损 / 枢轴</span>
+        <span><i style={{ background: '#a78bfa', width: 6, height: 6, borderRadius: 3 }} />公告 / 财报</span>
       </div>
       <div ref={ref} style={{ position: 'absolute', inset: 0 }} />
     </div>

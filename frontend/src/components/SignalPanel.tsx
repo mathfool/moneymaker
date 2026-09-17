@@ -1,11 +1,55 @@
 import { useEffect, useState } from 'react'
-import { api, num, pct, cap, type Backtest, type StockResponse, type StrategyMeta } from '../api'
+import { api, num, pct, cap, ago, type Backtest, type NewsItem, type StockResponse, type StrategyMeta } from '../api'
 
 interface Props {
   data: StockResponse | null
   strategy: StrategyMeta | undefined
   onPickStrategy: (k: string) => void
   onShowEquity?: (eq: Backtest['equity'] | null) => void
+  news?: NewsItem[]
+}
+
+const TAG_COLOR: Record<string, string> = { '财报': 'var(--yellow)', '公告': 'var(--purple)', '评级': 'var(--accent)', '并购': '#f472b6', '合同/产品': 'var(--green)', '监管/诉讼': 'var(--red)', '高管/内部': 'var(--muted)' }
+const TAG_ORDER = ['财报', '公告', '评级', '并购', '合同/产品', '监管/诉讼', '高管/内部']
+
+function NewsSection({ news, signals }: { news: NewsItem[]; signals: { date: string; type: string }[] }) {
+  const [tag, setTag] = useState<string>('')
+  const counts: Record<string, number> = {}
+  for (const n of news) for (const t of n.tags) counts[t] = (counts[t] ?? 0) + 1
+  const rows = news.filter(n => !tag || n.tags.includes(tag))
+  const sigDays = signals.map(s => ({ t: new Date(s.date).getTime(), type: s.type, date: s.date }))
+  const nearSignal = (iso: string | null) => {
+    if (!iso) return null
+    const t = new Date(iso).getTime()
+    return sigDays.find(s => Math.abs(s.t - t) <= 1.5 * 86400e3) ?? null
+  }
+  return (
+    <div className="section">
+      <h3>新闻 & 公告 <span style={{ textTransform: 'none', letterSpacing: 0 }}>· Yahoo / Google News / SEC</span></h3>
+      <div className="chips" style={{ marginBottom: 8 }}>
+        <span className={`chip ${tag === '' ? 'active' : ''}`} onClick={() => setTag('')}>全部 {news.length}</span>
+        {TAG_ORDER.filter(t => counts[t]).map(t => (
+          <span key={t} className={`chip ${tag === t ? 'active' : ''}`} style={{ color: TAG_COLOR[t] }} onClick={() => setTag(tag === t ? '' : t)}>{t} {counts[t]}</span>
+        ))}
+      </div>
+      {news.length === 0 && <div style={{ color: 'var(--muted)' }}>加载中或暂无新闻</div>}
+      <div className="sig-list" style={{ maxHeight: 360 }}>
+        {rows.map((n, i) => {
+          const ns = nearSignal(n.time)
+          return (
+            <div key={i} style={{ padding: '5px 0', borderBottom: '1px solid var(--border)', lineHeight: 1.35 }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <span>{ago(n.time)}</span><span>{n.source}</span>
+                {n.tags.map(t => <span key={t} style={{ color: TAG_COLOR[t] }}>#{t}</span>)}
+                {ns && <span className={`badge ${ns.type}`}>↔ {ns.date} {ns.type === 'buy' ? '买入' : '卖出'}信号</span>}
+              </div>
+              {n.url ? <a href={n.url} target="_blank" rel="noreferrer" style={{ color: 'var(--text)', textDecoration: 'none' }}>{n.title}</a> : <span>{n.title}</span>}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 const LEVEL_NAMES: Record<string, string> = {
@@ -13,7 +57,7 @@ const LEVEL_NAMES: Record<string, string> = {
   flag_high: '旗形高点', ema10: 'EMA10', ema20: 'EMA20', ema21: 'EMA21', base_high: '平台高点',
 }
 
-export default function SignalPanel({ data, strategy, onPickStrategy }: Props) {
+export default function SignalPanel({ data, strategy, onPickStrategy, news = [] }: Props) {
   const [account, setAccount] = useState(() => Number(localStorage.getItem('mm_account') ?? 100000))
   const [riskPct, setRiskPct] = useState(() => Number(localStorage.getItem('mm_risk') ?? 0.5))
   const [bt, setBt] = useState<Backtest | null>(null)
@@ -125,6 +169,8 @@ export default function SignalPanel({ data, strategy, onPickStrategy }: Props) {
           </>
         )}
       </div>
+
+      <NewsSection news={news} signals={r.signals} />
 
       <div className="section">
         <h3>信号历史（近 400 交易日）</h3>
