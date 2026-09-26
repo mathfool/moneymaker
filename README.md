@@ -71,6 +71,22 @@ cd backend && .venv/bin/python tools/eval.py jlaw -v    # 单个策略，显示�
 
 左侧"扫描结果"标签 → "扫描 S&P500 + NDX100"。首次约 1-2 分钟（下载 520 只票 3 年日线），之后约 30 秒。扫描同时计算 RS 相对强度排名（IBD 式：2×3月 + 6月 + 9月 + 12月收益的百分位）和板块排名，Minervini / J Law 的 RS 条件依赖它。
 
+## 每日自动扫描 + 通知
+
+`backend/tools/daily.py` 跑一遍全市场扫描，汇总当天新出的买卖信号，弹 macOS 通知，并把日报写到 `backend/data/reports/日期.md`。
+
+```bash
+cd backend && tools/install_schedule.sh          # 安装 launchd 定时任务：工作日 16:45（本机时区）
+cd backend && tools/install_schedule.sh uninstall
+MM_HOUR=17 MM_MINUTE=0 tools/install_schedule.sh  # 改时间
+.venv/bin/python tools/daily.py --test           # 发一条测试通知
+.venv/bin/python tools/daily.py                  # 手动跑一次
+```
+
+- 通知内容：自选股的买入/卖出信号（含止损、移动止盈），以及扫描池里分数 ≥ 70 且 RS ≥ 50 的新买点（阈值用 `MM_MIN_SCORE` / `MM_MIN_RS` 改）。
+- 设了 `MM_TELEGRAM_TOKEN` 和 `MM_TELEGRAM_CHAT_ID` 会同时推到 Telegram，手机上也能收到。
+- Mac 必须开着且没睡眠才会跑；launchd 会在错过的时间点之后、Mac 醒来时补跑一次。日志在 `backend/data/daily.log`。
+
 ## 接口
 
 - `GET /api/stock/{symbol}?strategy=jlaw` K 线 + 策略结果 + 五策略概览
