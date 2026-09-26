@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from . import db, data, universe, watchlist, scanner, backtest, market, fundamentals, news
+from . import db, data, universe, watchlist, scanner, backtest, market, fundamentals, news, positions, settings
 from .strategies import STRATEGIES, get_strategy
 
 app = FastAPI(title="moneymaker", version="0.1")
@@ -41,7 +41,7 @@ def market_summary():
 @app.get("/api/watchlist")
 def get_watchlist(strategy: str = Query("minervini")):
     syms = watchlist.load()
-    return _clean(_rows_for(syms, strategy))
+    return _clean({"rows": _rows_for(syms, strategy), "market": _market_flag()})
 
 
 def _rows_for(syms: list[str], strategy: str) -> list[dict]:
@@ -147,8 +147,50 @@ def get_news(symbol: str, limit: int = Query(40)):
     return _clean({"symbol": symbol, "items": items[:limit], "total": len(items)})
 
 
+@app.get("/api/positions")
+def get_positions():
+    return _clean({"positions": positions.enriched(), "market": _market_flag()})
+
+
+@app.post("/api/positions")
+def add_position(p: dict):
+    for k in ("symbol", "shares", "cost"):
+        if k not in p:
+            raise HTTPException(400, f"缺少 {k}")
+    if data.get_daily(p["symbol"]).empty:
+        raise HTTPException(404, f"找不到 {p['symbol'].upper()} 的行情数据")
+    positions.upsert(p)
+    return _clean({"positions": positions.enriched()})
+
+
+@app.delete("/api/positions/{symbol}")
+def del_position(symbol: str):
+    positions.remove(symbol)
+    return _clean({"positions": positions.enriched()})
+
+
+@app.get("/api/settings")
+def get_settings():
+    return settings.load()
+
+
+@app.post("/api/settings")
+def set_settings(patch: dict):
+    return settings.update(patch)
+
+
+def _market_flag() -> dict:
+    """大盘过滤开关状态 + 当前是否处于'不开新仓'环境。"""
+    st = settings.load()
+    spy = db.load_prices("SPY")
+    ok = True
+    if not spy.empty and len(spy) > 50:
+        ok = bool(spy["Close"].iloc[-1] > spy["Close"].rolling(50).mean().iloc[-1])
+    return {"enabled": st["market_filter"], "spy_above_50": ok, "blocking": st["market_filter"] and not ok}
+
+
 @app.get("/api/backtest/{symbol}")
-def bt(symbol: str, strategy: str = Query("minervini"), days: int = Query(750)):
+def bt(symbol: str, strategy: str = Query("minervini"), days: int = Query(750), partial: bool = Query(False)):
     symbol = symbol.upper()
     strat = get_strategy(strategy)
     df = data.get_daily(symbol)
@@ -158,7 +200,7 @@ def bt(symbol: str, strategy: str = Query("minervini"), days: int = Query(750)):
     base_ctx = market.benchmark_context(spy)
     base_ctx["_universe"] = universe.load_universe()
     comp = strat.compute(df, scanner.build_ctx(symbol, base_ctx))
-    return _clean(backtest.run(comp, symbol, lookback_days=days))
+    return _clean(backtest.run(comp, symbol, lookback_days=days, partial=partial))
 
 
 @app.get("/api/backtest_all/{symbol}")
@@ -171,7 +213,7 @@ def scan(strategy: str = Query("minervini"), min_score: float = Query(0), limit:
     rows = db.load_scan(strategy)
     rows = [r for r in rows if r.get("score", 0) >= min_score]
     rows.sort(key=lambda r: (r.get("signal") == "buy", r.get("score", 0), r.get("rs") or 0), reverse=True)
-    return _clean({"rows": rows[:limit], "total": len(rows), "status": scanner.status})
+    return _clean({"rows": rows[:limit], "total": len(rows), "status": scanner.status, "market": _market_flag()})
 
 
 @app.get("/api/sectors")

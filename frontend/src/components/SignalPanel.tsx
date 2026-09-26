@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, num, pct, cap, ago, type Backtest, type NewsItem, type StockResponse, type StrategyMeta } from '../api'
+import { api, num, pct, cap, ago, type Backtest, type NewsItem, type Position, type StockResponse, type StrategyMeta } from '../api'
 
 interface Props {
   data: StockResponse | null
@@ -7,6 +7,7 @@ interface Props {
   onPickStrategy: (k: string) => void
   onShowEquity?: (eq: Backtest['equity'] | null) => void
   news?: NewsItem[]
+  position?: Position | null
 }
 
 const TAG_COLOR: Record<string, string> = { '财报': 'var(--yellow)', '公告': 'var(--purple)', '评级': 'var(--accent)', '并购': '#f472b6', '合同/产品': 'var(--green)', '监管/诉讼': 'var(--red)', '高管/内部': 'var(--muted)' }
@@ -57,11 +58,12 @@ const LEVEL_NAMES: Record<string, string> = {
   flag_high: '旗形高点', ema10: 'EMA10', ema20: 'EMA20', ema21: 'EMA21', base_high: '平台高点',
 }
 
-export default function SignalPanel({ data, strategy, onPickStrategy, news = [] }: Props) {
+export default function SignalPanel({ data, strategy, onPickStrategy, news = [], position = null }: Props) {
   const [account, setAccount] = useState(() => Number(localStorage.getItem('mm_account') ?? 100000))
   const [riskPct, setRiskPct] = useState(() => Number(localStorage.getItem('mm_risk') ?? 0.5))
   const [bt, setBt] = useState<Backtest | null>(null)
   const [btLoading, setBtLoading] = useState(false)
+  const [partial, setPartial] = useState(false)
 
   useEffect(() => { localStorage.setItem('mm_account', String(account)); localStorage.setItem('mm_risk', String(riskPct)) }, [account, riskPct])
   useEffect(() => { setBt(null) }, [data?.symbol, data?.result.strategy])
@@ -78,11 +80,22 @@ export default function SignalPanel({ data, strategy, onPickStrategy, news = [] 
 
   const runBt = async () => {
     setBtLoading(true)
-    try { setBt(await api.backtest(data.symbol, r.strategy)) } finally { setBtLoading(false) }
+    try { setBt(await api.backtest(data.symbol, r.strategy, 750, partial)) } finally { setBtLoading(false) }
   }
 
   return (
     <aside className="rightpanel">
+      {position && position.advice && (
+        <div className="section" style={{ borderLeft: `3px solid ${position.advice.action === '离场' ? 'var(--red)' : position.advice.action === '持有' ? 'var(--green)' : 'var(--yellow)'}` }}>
+          <h3>我的持仓</h3>
+          <div className="kv">
+            <span className="k">股数 / 成本</span><span>{position.shares} @ {position.cost}（{position.date}）</span>
+            <span className="k">浮动盈亏</span><span className={(position.pnl ?? 0) >= 0 ? 'up' : 'down'}>{pct(position.pnl_pct)}  {(position.pnl ?? 0) >= 0 ? '+' : ''}${position.pnl?.toFixed(0)}</span>
+            <span className="k">规则判断（{position.advice.strategy_name}）</span><span style={{ fontWeight: 600 }}>{position.advice.action}</span>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--muted)', lineHeight: 1.4 }}>{position.advice.reason}</div>
+        </div>
+      )}
       <div className="section">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div className="score-ring" style={{ color: r.score >= 75 ? 'var(--green)' : r.score >= 50 ? 'var(--yellow)' : 'var(--muted)' }}>{Math.round(r.score)}</div>
@@ -186,7 +199,10 @@ export default function SignalPanel({ data, strategy, onPickStrategy, news = [] 
       </div>
 
       <div className="section">
-        <h3>回测（近 3 年，全仓进出，止损按策略）</h3>
+        <h3>回测（近 3 年，入场当日收盘买入，止损按策略）</h3>
+        <label style={{ display: 'block', marginBottom: 8, fontSize: 12, color: 'var(--muted)' }} title="30 只票回测：分批止盈会降低盈亏比（Kullamägi 2.46→2.18，Minervini 1.98→1.33），因为保本止损会把大赢家提前踢出去">
+          <input type="checkbox" checked={partial} onChange={e => { setPartial(e.target.checked); setBt(null) }} /> 分批止盈：涨到 2R 卖 1/3，止损提到成本价
+        </label>
         {!bt && <button onClick={runBt} disabled={btLoading}>{btLoading ? '计算中…' : `回测 ${strategy.name} 在 ${data.symbol} 上的表现`}</button>}
         {bt && (
           <>

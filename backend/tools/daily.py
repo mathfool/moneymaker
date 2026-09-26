@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from app import db, scanner, watchlist, market  # noqa: E402
+from app import db, scanner, watchlist, market, positions, settings  # noqa: E402
 from app.config import DATA_DIR  # noqa: E402
 from app.strategies import STRATEGIES  # noqa: E402
 
@@ -109,6 +109,22 @@ def build_report() -> tuple[str, str, int]:
     if n_scan == 0:
         lines.append("- 无")
     lines.append("")
+    lines.append("## 我的持仓")
+    pos = positions.enriched()
+    if pos:
+        for p in pos:
+            a = p.get("advice") or {}
+            lines.append(f"- **{p['symbol']}** {p['shares']:.0f} 股 @ {p['cost']} → {p.get('close')}，"
+                         f"{(p.get('pnl_pct') or 0) * 100:+.1f}%（{p.get('pnl', 0):+.0f} 美元）· **{a.get('action', '?')}** · {a.get('reason', '')}")
+            if a.get("action") == "离场":
+                short.insert(0, f"持仓 {p['symbol']} 规则要求离场")
+    else:
+        lines.append("- 未录入持仓（左侧\"持仓\"标签可以添加）")
+    lines.append("")
+    st = settings.load()
+    spy_ok = bool(spy.get("above50"))
+    if st.get("market_filter") and not spy_ok:
+        lines.insert(3, "> ⚠ 大盘过滤已开启，SPY 在 50 日线下方：以下买入信号只作观察，不开新仓。")
     lines.append("## 自选股持仓状态（M=Minervini W=Weinstein K=Kullamägi O=Kell J=J Law C=共识）")
     for sym in watch:
         parts = []

@@ -35,8 +35,16 @@ export interface ConsensusRow {
   days_to_earnings?: number | null; support: number; fresh_buys: number; score: number
   strategies: Record<string, { signal: string; score: number; state: string; last_signal: Signal | null; supports: boolean }>
 }
+export interface MarketFlag { enabled: boolean; spy_above_50: boolean; blocking: boolean }
+export interface Settings { market_filter: boolean; market_filter_rule: string }
+export interface PositionAdvice { action: string; reason: string; state?: string; signal?: string; stop?: number | null; score?: number; strategy_name?: string }
+export interface Position {
+  symbol: string; shares: number; cost: number; date: string; strategy: string; note?: string
+  close?: number; chg1d?: number; value?: number; pnl?: number; pnl_pct?: number; days?: number; rs?: number | null
+  advice?: PositionAdvice; error?: string
+}
 export interface ScanStatus { running: boolean; phase: string; done: number; total: number; error: string | null; finished: number | null }
-export interface Trade { entry_date: string; exit_date: string; entry: number; exit: number; stop: number; ret: number; r: number; bars: number; reason: string }
+export interface Trade { entry_date: string; exit_date: string; entry: number; exit: number; stop: number; ret: number; r: number; bars: number; reason: string; partial?: boolean }
 export interface Backtest {
   symbol: string; start: string; end: string; trades: number; win_rate: number | null; avg_win: number | null
   avg_loss: number | null; avg_r: number | null; profit_factor: number | null; total_return: number; buy_hold: number
@@ -60,12 +68,18 @@ async function j<T>(url: string, init?: RequestInit): Promise<T> {
 export const api = {
   strategies: () => j<StrategyMeta[]>('/api/strategies'),
   market: () => j<Market>('/api/market'),
-  watchlist: (strategy: string) => j<Row[]>(`/api/watchlist?strategy=${strategy}`),
+  watchlist: (strategy: string) => j<{ rows: Row[]; market: MarketFlag }>(`/api/watchlist?strategy=${strategy}`),
+  positions: () => j<{ positions: Position[]; market: MarketFlag }>('/api/positions'),
+  addPosition: (p: { symbol: string; shares: number; cost: number; date?: string; strategy?: string; note?: string }) =>
+    j<{ positions: Position[] }>('/api/positions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }),
+  delPosition: (s: string) => j<{ positions: Position[] }>(`/api/positions/${encodeURIComponent(s)}`, { method: 'DELETE' }),
+  settings: () => j<Settings>('/api/settings'),
+  setSettings: (p: Partial<Settings>) => j<Settings>('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }),
   addWatch: (s: string) => j<{ watchlist: string[] }>(`/api/watchlist/${encodeURIComponent(s)}`, { method: 'POST' }),
   delWatch: (s: string) => j<{ watchlist: string[] }>(`/api/watchlist/${encodeURIComponent(s)}`, { method: 'DELETE' }),
   stock: (s: string, strategy: string, days = 400) => j<StockResponse>(`/api/stock/${encodeURIComponent(s)}?strategy=${strategy}&days=${days}`),
-  backtest: (s: string, strategy: string, days = 750) => j<Backtest>(`/api/backtest/${encodeURIComponent(s)}?strategy=${strategy}&days=${days}`),
-  scan: (strategy: string, minScore = 0) => j<{ rows: Row[]; total: number; status: ScanStatus }>(`/api/scan?strategy=${strategy}&min_score=${minScore}&limit=1000`),
+  backtest: (s: string, strategy: string, days = 750, partial = false) => j<Backtest>(`/api/backtest/${encodeURIComponent(s)}?strategy=${strategy}&days=${days}&partial=${partial}`),
+  scan: (strategy: string, minScore = 0) => j<{ rows: Row[]; total: number; status: ScanStatus; market: MarketFlag }>(`/api/scan?strategy=${strategy}&min_score=${minScore}&limit=1000`),
   news: (s: string) => j<{ symbol: string; items: NewsItem[]; total: number }>(`/api/news/${encodeURIComponent(s)}`),
   sectors: () => j<SectorInfo[]>('/api/sectors'),
   consensus: (min: number, mode: 'buyhold' | 'score') => j<{ rows: ConsensusRow[]; total: number; status: ScanStatus }>(`/api/consensus?min_support=${min}&mode=${mode}`),
@@ -86,4 +100,5 @@ export const ago = (iso: string | null | undefined) => {
   if (d < 7) return `${Math.round(d)} 天前`
   return iso.slice(5, 10).replace('-', '/')
 }
+export const daysAgo = (date: string) => Math.round((Date.now() - new Date(date).getTime()) / 86400e3)
 export const num = (v: number | null | undefined, nd = 2) => (v == null ? '–' : v.toFixed(nd))

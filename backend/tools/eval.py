@@ -1,4 +1,4 @@
-"""Quick aggregate backtest across a basket of symbols: python tools/eval.py [strategy ...]"""
+"""Quick aggregate backtest across a basket of symbols: python tools/eval.py [strategy ...] [-v] [--partial]"""
 import sys, statistics as st
 sys.path.insert(0, ".")
 from app import db, data, universe, market, scanner, backtest
@@ -23,7 +23,7 @@ def main(keys):
             if sym not in prices:
                 continue
             comp = s.compute(prices[sym], scanner.build_ctx(sym, base))
-            rows.append(backtest.run(comp, sym, lookback_days=750))
+            rows.append(backtest.run(comp, sym, lookback_days=750, partial="--partial" in sys.argv))
         allt = [t for r in rows for t in r["trade_list"]]
         wins = [t for t in allt if t["ret"] > 0]
         losses = [t for t in allt if t["ret"] <= 0]

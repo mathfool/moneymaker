@@ -15,7 +15,8 @@ import pandas as pd
 from .strategies.base import Computed
 
 
-def run(comp: Computed, symbol: str, lookback_days: int | None = None) -> dict:
+def run(comp: Computed, symbol: str, lookback_days: int | None = None, partial: bool = False) -> dict:
+    """partial=True: 涨到 2R 时卖出 1/3 并把止损提到成本价，剩余 2/3 按原规则离场。"""
     d = comp.df
     if lookback_days:
         d = d.tail(lookback_days)
@@ -28,17 +29,26 @@ def run(comp: Computed, symbol: str, lookback_days: int | None = None) -> dict:
     trail = pt["series"].reindex(d.index).values if pt else None
     trades = []
     in_pos = False
+    st0 = 0.0
     ep = st = 0.0
     ei = 0
     equity = [1.0]
     eq = 1.0
+    frac = 1.0            # 仍持有的仓位比例
+    realized = 0.0        # 已分批卖出部分贡献的收益（占整笔的比例）
+    took_partial = False
     for i in range(len(d)):
         if in_pos:
             exit_px = None
             reason = None
+            if partial and not took_partial and ep > st and c[i] >= ep + 2 * (ep - st):
+                realized += (1 / 3) * (c[i] / ep - 1)
+                frac = 2 / 3
+                took_partial = True
+                st = ep                              # 剩余仓位止损提到成本价
             if l[i] <= st:
                 exit_px = min(o[i], st) if o[i] < st else st
-                reason = "止损"
+                reason = "止损" if st < ep else "保本止损"
             elif exit_[i]:
                 exit_px = c[i]
                 reason = "卖出信号"
@@ -46,12 +56,13 @@ def run(comp: Computed, symbol: str, lookback_days: int | None = None) -> dict:
                 exit_px = c[i]
                 reason = pt.get("label", "移动止盈")
             if exit_px is not None:
-                ret = exit_px / ep - 1
-                risk = (ep - st) / ep if ep > st else 0.05
+                ret = realized + frac * (exit_px / ep - 1)
+                risk = (ep - st0) / ep if ep > st0 else 0.05
                 trades.append({
                     "entry_date": idx[ei].strftime("%Y-%m-%d"), "exit_date": idx[i].strftime("%Y-%m-%d"),
                     "entry": round(float(ep), 2), "exit": round(float(exit_px), 2), "stop": round(float(st), 2),
                     "ret": round(float(ret), 4), "r": round(float(ret / risk), 2), "bars": i - ei, "reason": reason,
+                    "partial": took_partial,
                 })
                 eq *= 1 + ret
                 in_pos = False
@@ -59,13 +70,17 @@ def run(comp: Computed, symbol: str, lookback_days: int | None = None) -> dict:
             in_pos = True
             ep = c[i]
             st = stop_s[i] if np.isfinite(stop_s[i]) and stop_s[i] < ep else ep * 0.93
+            st0 = st
             ei = i
-        equity.append(eq * ((c[i] / ep) if in_pos else 1.0))
+            frac, realized, took_partial = 1.0, 0.0, False
+        equity.append(eq * ((1 + realized + frac * (c[i] / ep - 1)) if in_pos else 1.0))
     open_trade = None
     if in_pos:
         open_trade = {"entry_date": idx[ei].strftime("%Y-%m-%d"), "entry": round(float(ep), 2), "stop": round(float(st), 2),
-                      "ret": round(float(c[-1] / ep - 1), 4), "bars": len(d) - 1 - ei}
-    return summarize(trades, equity, d, symbol, open_trade)
+                      "ret": round(float(realized + frac * (c[-1] / ep - 1)), 4), "bars": len(d) - 1 - ei, "partial": took_partial}
+    out = summarize(trades, equity, d, symbol, open_trade)
+    out["partial"] = partial
+    return out
 
 
 def summarize(trades: list[dict], equity: list[float], d: pd.DataFrame, symbol: str, open_trade=None) -> dict:

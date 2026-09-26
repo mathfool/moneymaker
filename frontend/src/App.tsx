@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, pct, type Market, type NewsItem, type StockResponse, type StrategyMeta } from './api'
+import { api, pct, type Market, type MarketFlag, type NewsItem, type Position, type Settings, type StockResponse, type StrategyMeta } from './api'
 import Chart from './components/Chart'
 import StockList from './components/StockList'
 import SignalPanel from './components/SignalPanel'
@@ -38,6 +38,18 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [news, setNews] = useState<NewsItem[]>([])
+  const [positions, setPositions] = useState<Position[]>([])
+  const [marketFlag, setMarketFlag] = useState<MarketFlag | null>(null)
+  const [settings, setSettings] = useState<Settings | null>(null)
+  useEffect(() => {
+    api.positions().then(r => { setPositions(r.positions); setMarketFlag(r.market) }).catch(() => {})
+    api.settings().then(setSettings).catch(() => {})
+  }, [refreshKey])
+  const toggleMarketFilter = async () => {
+    const s = await api.setSettings({ market_filter: !settings?.market_filter })
+    setSettings(s)
+    setRefreshKey(k => k + 1)
+  }
   useEffect(() => {
     if (!symbol) return
     let cancelled = false
@@ -74,9 +86,13 @@ export default function App() {
           ))}
         </div>
         <button onClick={() => { setRefreshKey(k => k + 1); api.market().then(setMarket) }} title="重新拉取行情">↻</button>
+        <label className="pill" style={{ cursor: 'pointer', whiteSpace: 'nowrap', flex: 'none', color: settings?.market_filter ? (marketFlag?.blocking ? 'var(--yellow)' : 'var(--green)') : 'var(--muted)' }}
+          title="开启后，SPY 收在 50 日线下方时所有买入信号只作观察、不开新仓（五位交易者共同的规则；回测未验证）">
+          <input type="checkbox" checked={!!settings?.market_filter} onChange={toggleMarketFilter} /> 大盘过滤{settings?.market_filter && marketFlag ? (marketFlag.blocking ? '：暂停开仓' : '：可开仓') : ''}
+        </label>
         <MarketBar m={market} />
       </header>
-      <StockList strategy={strategy} selected={symbol} onSelect={setSymbol} refreshKey={refreshKey} />
+      <StockList strategy={strategy} selected={symbol} onSelect={setSymbol} refreshKey={refreshKey} positions={positions} onPositionsChange={setPositions} market={marketFlag} onMarket={setMarketFlag} />
       <main className="main">
         <div className="chart-header">
           <h2>{symbol ?? '—'}</h2>
@@ -99,7 +115,7 @@ export default function App() {
           <div className="empty" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{err ?? '在左侧选择一只股票'}</div>
         )}
       </main>
-      <SignalPanel data={data} strategy={meta} onPickStrategy={setStrategy} news={news} />
+      <SignalPanel data={data} strategy={meta} onPickStrategy={setStrategy} news={news} position={positions.find(p => p.symbol === symbol) ?? null} />
     </div>
   )
 }

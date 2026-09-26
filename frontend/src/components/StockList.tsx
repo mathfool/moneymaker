@@ -1,21 +1,77 @@
 import { useEffect, useState } from 'react'
-import { api, pct, num, type Row, type ScanStatus, type ConsensusRow, type SectorInfo } from '../api'
+import { api, pct, num, daysAgo, type Row, type ScanStatus, type ConsensusRow, type SectorInfo, type Position, type MarketFlag } from '../api'
 
 interface Props {
   strategy: string
   selected: string | null
   onSelect: (s: string) => void
   refreshKey: number
+  positions: Position[]
+  onPositionsChange: (p: Position[]) => void
+  market: MarketFlag | null
+  onMarket: (m: MarketFlag) => void
 }
 
-function Badge({ r }: { r: Row }) {
+const STRAT_NAMES: Record<string, string> = { minervini: 'Minervini', weinstein: 'Weinstein', kullamagi: 'Kullamägi', kell: 'Kell', jlaw: 'J Law', consensus: '共识' }
+
+function Badge({ r, blocking }: { r: Row; blocking?: boolean }) {
   if (r.error) return <span className="badge none">无数据</span>
   const s = r.signal ?? 'none'
+  if (s === 'buy' && blocking) return <span className="badge none" title="大盘过滤：SPY 在 50 日线下方，买入信号只作观察">买入·大盘过滤</span>
+  if (s === 'hold' && r.last_signal?.type === 'buy') {
+    const d = daysAgo(r.last_signal.date)
+    if (d <= 4) return <span className="badge buy" title="买点在 3 个交易日内，还可以跟进">买点 {d} 天前</span>
+    return <span className="badge hold" title="买点已超过 3 个交易日，不追">持有</span>
+  }
   const label = s === 'buy' ? '买入' : s === 'sell' ? '卖出' : s === 'hold' ? '持有' : '观望'
   return <span className={`badge ${s}`}>{label}</span>
 }
 
-function RowItem({ r, selected, onSelect, onDelete }: { r: Row; selected: boolean; onSelect: () => void; onDelete?: () => void }) {
+function PositionItem({ p, selected, onSelect, onDelete }: { p: Position; selected: boolean; onSelect: () => void; onDelete: () => void }) {
+  const a = p.advice
+  const color = a?.action === '离场' ? 'var(--red)' : a?.action === '持有' ? 'var(--green)' : 'var(--yellow)'
+  return (
+    <div className={`row ${selected ? 'selected' : ''}`} onClick={onSelect}>
+      <div className="sym">{p.symbol} <span style={{ color: 'var(--muted)', fontSize: 11, fontWeight: 400 }}>{p.shares} 股 @ {p.cost} · {STRAT_NAMES[p.strategy] ?? p.strategy}</span></div>
+      <div className="price">
+        {p.close != null && <>{num(p.close)} <span className={(p.pnl_pct ?? 0) >= 0 ? 'up' : 'down'}>{pct(p.pnl_pct)}</span></>}
+        <button className="del" title="删除持仓" onClick={e => { e.stopPropagation(); onDelete() }}>×</button>
+      </div>
+      <div className="state">
+        <span className="badge" style={{ background: 'transparent', border: `1px solid ${color}`, color }}>{a?.action ?? '?'}</span>
+        <span>{p.pnl != null ? `${p.pnl >= 0 ? '+' : ''}$${p.pnl.toFixed(0)}` : ''} · {p.days} 天</span>
+      </div>
+      {a?.reason && <div className="state" style={{ marginTop: -2, whiteSpace: 'normal' }}>{a.reason}</div>}
+    </div>
+  )
+}
+
+function AddPosition({ strategy, onAdd }: { strategy: string; onAdd: (p: Position[]) => void }) {
+  const [sym, setSym] = useState(''); const [shares, setShares] = useState(''); const [cost, setCost] = useState('')
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); const [strat, setStrat] = useState(strategy)
+  const [err, setErr] = useState<string | null>(null); const [busy, setBusy] = useState(false)
+  const submit = async () => {
+    if (!sym || !shares || !cost) { setErr('代码、股数、成本都要填'); return }
+    setBusy(true)
+    try { const r = await api.addPosition({ symbol: sym, shares: Number(shares), cost: Number(cost), date, strategy: strat }); onAdd(r.positions); setSym(''); setShares(''); setCost(''); setErr(null) }
+    catch (e) { setErr(String((e as Error).message ?? e)) } finally { setBusy(false) }
+  }
+  return (
+    <div className="progress" style={{ flexWrap: 'wrap', gap: 6 }}>
+      <input style={{ width: 64 }} placeholder="代码" value={sym} onChange={e => setSym(e.target.value.toUpperCase())} />
+      <input style={{ width: 56 }} placeholder="股数" type="number" value={shares} onChange={e => setShares(e.target.value)} />
+      <input style={{ width: 64 }} placeholder="成本" type="number" value={cost} onChange={e => setCost(e.target.value)} />
+      <input style={{ width: 118 }} type="date" value={date} onChange={e => setDate(e.target.value)} />
+      <select value={strat} onChange={e => setStrat(e.target.value)} title="用哪个策略的规则管理这笔持仓">
+        {Object.entries(STRAT_NAMES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+      </select>
+      <button className="primary" onClick={submit} disabled={busy}>{busy ? '…' : '添加'}</button>
+      {err && <span className="err" style={{ padding: 0 }}>{err}</span>}
+    </div>
+  )
+}
+
+function RowItem({ r, selected, onSelect, onDelete, blocking }: { r: Row; selected: boolean; onSelect: () => void; onDelete?: () => void; blocking?: boolean }) {
   return (
     <div className={`row ${selected ? 'selected' : ''}`} onClick={onSelect}>
       <div className="sym">{r.symbol} {r.rs != null && <span className="badge none" title="RS 相对强度排名">RS {r.rs}</span>} {r.industry && <span style={{ color: 'var(--muted)', fontSize: 10.5, fontWeight: 400 }}>{r.industry}</span>}</div>
@@ -24,7 +80,7 @@ function RowItem({ r, selected, onSelect, onDelete }: { r: Row; selected: boolea
         {onDelete && <button className="del" title="移出自选" onClick={e => { e.stopPropagation(); onDelete() }}>×</button>}
       </div>
       <div className="state">
-        <Badge r={r} />
+        <Badge r={r} blocking={blocking} />
         <span className="scorebar" title={`设置完成度 ${r.score ?? 0}%`}><i style={{ width: `${r.score ?? 0}%` }} /></span>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.error ?? r.state}</span>
       </div>
@@ -94,7 +150,8 @@ function SectorFilter({ sectors, sector, industry, industries, onSector, onIndus
   )
 }
 
-export default function StockList({ strategy, selected, onSelect, refreshKey }: Props) {
+export default function StockList({ strategy, selected, onSelect, refreshKey, positions, onPositionsChange, market, onMarket }: Props) {
+  const blocking = !!market?.blocking
   const [sectors, setSectors] = useState<SectorInfo[]>([])
   const [sector, setSector] = useState(() => localStorage.getItem('mm_sector') ?? '')
   const [industry, setIndustry] = useState(() => localStorage.getItem('mm_industry') ?? '')
@@ -102,7 +159,8 @@ export default function StockList({ strategy, selected, onSelect, refreshKey }: 
   useEffect(() => { localStorage.setItem('mm_sector', sector); localStorage.setItem('mm_industry', industry) }, [sector, industry])
   const secOk = (r: { sector?: string | null; industry?: string | null }) =>
     (!sector || (r.sector ?? 'Unknown') === sector) && (!industry || r.industry === industry)
-  const [tab, setTab] = useState<'watch' | 'scan' | 'consensus'>('watch')
+  const [tab, setTab] = useState<'watch' | 'scan' | 'consensus' | 'positions'>(() => (localStorage.getItem('mm_tab') as 'watch') ?? 'watch')
+  useEffect(() => { localStorage.setItem('mm_tab', tab) }, [tab])
   const [cons, setCons] = useState<ConsensusRow[]>([])
   const [consMin, setConsMin] = useState(() => Number(localStorage.getItem('mm_cons_min') ?? 3))
   const [consMode, setConsMode] = useState<'buyhold' | 'score'>(() => (localStorage.getItem('mm_cons_mode') as 'buyhold' | 'score') ?? 'buyhold')
@@ -125,10 +183,10 @@ export default function StockList({ strategy, selected, onSelect, refreshKey }: 
 
   const loadWatch = async () => {
     setLoading(true)
-    try { setWatch(await api.watchlist(strategy)); setErr(null) } catch (e) { setErr(String(e)) } finally { setLoading(false) }
+    try { const r = await api.watchlist(strategy); setWatch(r.rows); onMarket(r.market); setErr(null) } catch (e) { setErr(String(e)) } finally { setLoading(false) }
   }
   const loadScan = async () => {
-    try { const r = await api.scan(strategy); setScan(r.rows); setStatus(r.status) } catch (e) { setErr(String(e)) }
+    try { const r = await api.scan(strategy); setScan(r.rows); setStatus(r.status); onMarket(r.market) } catch (e) { setErr(String(e)) }
   }
 
   useEffect(() => { loadWatch(); loadScan() }, [strategy, refreshKey]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -176,13 +234,29 @@ export default function StockList({ strategy, selected, onSelect, refreshKey }: 
         <button className={tab === 'watch' ? 'active' : ''} onClick={() => setTab('watch')}>自选 ({watch.length})</button>
         <button className={tab === 'scan' ? 'active' : ''} onClick={() => setTab('scan')}>扫描 ({scanRows.length})</button>
         <button className={tab === 'consensus' ? 'active' : ''} onClick={() => setTab('consensus')}>共识 ({consRows.length})</button>
+        <button className={tab === 'positions' ? 'active' : ''} onClick={() => setTab('positions')}>持仓 ({positions.length})</button>
       </div>
+      {blocking && <div className="progress" style={{ color: 'var(--yellow)' }}>⚠ 大盘过滤：SPY 在 50 日线下方，买入信号只作观察</div>}
       {err && <div className="err">{err}</div>}
       {tab === 'watch' && (
         <div className="list">
           {loading && watch.length === 0 && <div className="empty">加载中…</div>}
-          {watch.map(r => <RowItem key={r.symbol} r={r} selected={r.symbol === selected} onSelect={() => onSelect(r.symbol)} onDelete={() => del(r.symbol)} />)}
+          {watch.map(r => <RowItem key={r.symbol} r={r} selected={r.symbol === selected} onSelect={() => onSelect(r.symbol)} onDelete={() => del(r.symbol)} blocking={blocking} />)}
         </div>
+      )}
+      {tab === 'positions' && (
+        <>
+          <AddPosition strategy={strategy} onAdd={onPositionsChange} />
+          <div className="list">
+            {positions.length === 0 && <div className="empty">录入你实际持有的票，软件会按你选的策略告诉你该持有还是离场</div>}
+            {positions.map(p => <PositionItem key={p.symbol} p={p} selected={p.symbol === selected} onSelect={() => onSelect(p.symbol)} onDelete={async () => onPositionsChange((await api.delPosition(p.symbol)).positions)} />)}
+            {positions.length > 0 && (
+              <div className="progress" style={{ borderTop: '1px solid var(--border)', borderBottom: 0 }}>
+                合计市值 ${positions.reduce((a, p) => a + (p.value ?? 0), 0).toFixed(0)} · 浮动 <span className={positions.reduce((a, p) => a + (p.pnl ?? 0), 0) >= 0 ? 'up' : 'down'}>${positions.reduce((a, p) => a + (p.pnl ?? 0), 0).toFixed(0)}</span>
+              </div>
+            )}
+          </div>
+        </>
       )}
       {tab === 'consensus' && (
         <>
@@ -229,7 +303,7 @@ export default function StockList({ strategy, selected, onSelect, refreshKey }: 
           </div>
           <div className="list">
             {scanRows.length === 0 && <div className="empty">{scan.length ? '没有满足筛选的股票' : '点击上方按钮扫描全市场'}</div>}
-            {scanRows.map(r => <RowItem key={r.symbol} r={r} selected={r.symbol === selected} onSelect={() => onSelect(r.symbol)} />)}
+            {scanRows.map(r => <RowItem key={r.symbol} r={r} selected={r.symbol === selected} onSelect={() => onSelect(r.symbol)} blocking={blocking} />)}
           </div>
         </>
       )}
