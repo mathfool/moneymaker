@@ -98,7 +98,7 @@ export default function SignalPanel({ data, strategy, onPickStrategy, news = [] 
       </div>
 
       <div className="section">
-        <h3>五种策略一览</h3>
+        <h3>各策略一览</h3>
         <div className="chips">
           {data.summary.map(s => (
             <div key={s.key} className={`chip ${s.key === r.strategy ? 'active' : ''}`} onClick={() => onPickStrategy(s.key)} title={s.state}>

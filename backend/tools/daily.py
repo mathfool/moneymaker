@@ -26,7 +26,7 @@ from app.strategies import STRATEGIES  # noqa: E402
 MIN_SCORE = float(os.environ.get("MM_MIN_SCORE", 70))
 # Kell 的三种买点互斥，条件全过也只有 65 分，所以单独给一个门槛（60 = 均线多头 + 未过度延伸 + 买点）
 MIN_SCORE_BY = {"kell": min(MIN_SCORE, 60.0)}
-SHORT = {"minervini": "M", "weinstein": "W", "kullamagi": "K", "kell": "O", "jlaw": "J"}
+SHORT = {"minervini": "M", "weinstein": "W", "kullamagi": "K", "kell": "O", "jlaw": "J", "consensus": "C"}
 MIN_RS = int(os.environ.get("MM_MIN_RS", 50))
 REPORT_DIR = DATA_DIR / "reports"
 NAMES = {k: s.name for k, s in STRATEGIES.items()}
@@ -109,7 +109,7 @@ def build_report() -> tuple[str, str, int]:
     if n_scan == 0:
         lines.append("- 无")
     lines.append("")
-    lines.append("## 自选股持仓状态（M=Minervini W=Weinstein K=Kullamägi O=Kell J=J Law）")
+    lines.append("## 自选股持仓状态（M=Minervini W=Weinstein K=Kullamägi O=Kell J=J Law C=共识）")
     for sym in watch:
         parts = []
         for k, rows in rows_by_strategy.items():

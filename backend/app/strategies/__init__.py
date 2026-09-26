@@ -4,8 +4,9 @@ from .weinstein import Weinstein
 from .kullamagi import Kullamagi
 from .kell import OliverKell
 from .jlaw import JLaw
+from .consensus import Consensus
 
-STRATEGIES = {s.key: s for s in (Minervini(), Weinstein(), Kullamagi(), OliverKell(), JLaw())}
+STRATEGIES = {s.key: s for s in (Minervini(), Weinstein(), Kullamagi(), OliverKell(), JLaw(), Consensus())}
 
 
 def get_strategy(key: str):

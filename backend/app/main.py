@@ -194,6 +194,8 @@ def consensus(min_support: int = Query(3), mode: str = Query("buyhold"), score_m
     """Stocks that several strategies support at once. mode=buyhold: signal is buy/hold; mode=score: score >= score_min."""
     per: dict[str, dict] = {}
     for key in STRATEGIES:
+        if key == "consensus":          # derived from the others; not a voter
+            continue
         for r in db.load_scan(key):
             row = per.setdefault(r["symbol"], {"symbol": r["symbol"], "close": r.get("close"), "chg1d": r.get("chg1d"), "rs": r.get("rs"),
                                                "sector": r.get("sector"), "industry": r.get("industry"), "eps_yoy": r.get("eps_yoy"), "rev_yoy": r.get("rev_yoy"),

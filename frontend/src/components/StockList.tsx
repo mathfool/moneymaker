@@ -46,8 +46,8 @@ function RowItem({ r, selected, onSelect, onDelete }: { r: Row; selected: boolea
   )
 }
 
-const SHORT: Record<string, string> = { minervini: 'M', weinstein: 'W', kullamagi: 'K', kell: 'O', jlaw: 'J' }
-const FULL: Record<string, string> = { minervini: 'Minervini', weinstein: 'Weinstein', kullamagi: 'Kullamägi', kell: 'Kell', jlaw: 'J Law' }
+const SHORT: Record<string, string> = { minervini: 'M', weinstein: 'W', kullamagi: 'K', kell: 'O', jlaw: 'J', consensus: 'C' }
+const FULL: Record<string, string> = { minervini: 'Minervini', weinstein: 'Weinstein', kullamagi: 'Kullamägi', kell: 'Kell', jlaw: 'J Law', consensus: '共识' }
 
 function ConsensusItem({ r, selected, onSelect }: { r: ConsensusRow; selected: boolean; onSelect: () => void }) {
   return (
